@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Stardew Valley Sync Script
-# Sincroniza el progreso del juego entre Android y macOS usando ADB
+# Sincroniza el progreso del juego entre Android y macOS usando ADB (USB o inalámbrico)
 
 set -euo pipefail
 
@@ -26,12 +26,25 @@ check_dependencies() {
     done
 }
 
-# Función para verificar la conexión ADB
-check_adb_connection() {
-    log "Verificando conexión ADB..."
-    adb devices
+# Función para elegir el método de conexión
+choose_connection_method() {
+    echo "Elige el método de conexión:"
+    echo "1) USB"
+    echo "2) Inalámbrico (ADB over Wi-Fi)"
+    read -p "Ingresa tu elección (1 o 2): " choice
+
+    case $choice in
+        1) connect_usb ;;
+        2) connect_wireless ;;
+        *) log "Opción inválida. Saliendo."; exit 1 ;;
+    esac
+}
+
+# Función para conexión USB
+connect_usb() {
+    log "Verificando conexión ADB por USB..."
     if ! adb get-state &> /dev/null; then
-        log "Error: No se detectó ningún dispositivo Android conectado."
+        log "Error: No se detectó ningún dispositivo Android conectado por USB."
         log "Salida de 'adb devices':"
         adb devices -l
         log "Intentando reiniciar el servidor ADB..."
@@ -46,7 +59,27 @@ check_adb_connection() {
             exit 1
         fi
     fi
-    log "Dispositivo Android detectado correctamente."
+    log "Dispositivo Android detectado correctamente por USB."
+}
+
+# Función para conexión inalámbrica
+connect_wireless() {
+    log "Configurando conexión ADB inalámbrica..."
+    read -p "Ingresa la dirección IP y puerto del dispositivo (ejemplo: 192.168.1.100:37000): " ip_port
+    read -p "Ingresa el código de emparejamiento mostrado en tu dispositivo Android: " pairing_code
+
+    if ! adb pair $ip_port $pairing_code; then
+        log "Error: No se pudo emparejar con el dispositivo. Verifica la IP, puerto y código de emparejamiento."
+        exit 1
+    fi
+
+    ip=$(echo $ip_port | cut -d':' -f1)
+    if ! adb connect $ip; then
+        log "Error: No se pudo conectar al dispositivo después del emparejamiento."
+        exit 1
+    fi
+
+    log "Conexión inalámbrica establecida correctamente."
 }
 
 # Función para crear directorios si no existen
@@ -109,7 +142,7 @@ main() {
     log "Iniciando sincronización de Stardew Valley entre Android y macOS..."
 
     check_dependencies
-    check_adb_connection
+    choose_connection_method
     create_directories
 
     # Obtener lista de granjas en Android
