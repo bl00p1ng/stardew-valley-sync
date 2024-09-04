@@ -127,6 +127,11 @@ sync_farm() {
     if adb shell "[ -d $android_farm_path ]"; then
         log "Copiando granja $farm_name desde Android..."
         adb pull "$android_farm_path" "$temp_android_path"
+        # Mover los archivos un nivel arriba si se creó un subdirectorio
+        if [ -d "$temp_android_path/$farm_name" ]; then
+            mv "$temp_android_path/$farm_name"/* "$temp_android_path/"
+            rmdir "$temp_android_path/$farm_name"
+        fi
     else
         log "La granja $farm_name no existe en Android."
     fi
