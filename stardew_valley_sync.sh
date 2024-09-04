@@ -28,11 +28,25 @@ check_dependencies() {
 
 # Función para verificar la conexión ADB
 check_adb_connection() {
+    log "Verificando conexión ADB..."
+    adb devices
     if ! adb get-state &> /dev/null; then
         log "Error: No se detectó ningún dispositivo Android conectado."
-        log "Por favor, asegúrate de que tu dispositivo esté conectado y que la depuración USB esté activada."
-        exit 1
+        log "Salida de 'adb devices':"
+        adb devices -l
+        log "Intentando reiniciar el servidor ADB..."
+        adb kill-server
+        adb start-server
+        log "Nuevo intento de conexión después de reiniciar el servidor:"
+        adb devices -l
+        if ! adb get-state &> /dev/null; then
+            log "Por favor, asegúrate de que tu dispositivo esté conectado y que la depuración USB esté activada."
+            log "Estado de ADB:"
+            adb get-state
+            exit 1
+        fi
     fi
+    log "Dispositivo Android detectado correctamente."
 }
 
 # Función para crear directorios si no existen
