@@ -10,6 +10,9 @@ MACOS_SAVE_DIR="${HOME}/.config/StardewValley/Saves"
 ANDROID_SAVE_DIR="/storage/emulated/0/Android/data/com.chucklefish.stardewvalley/files/Saves"
 TEMP_DIR="/tmp/stardew_valley_sync"
 
+# Archivo a ignorar
+IGNORE_FILE="steam_autocloud.vdf"
+
 # Función para registrar mensajes
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -82,10 +85,13 @@ connect_wireless() {
     log "Conexión inalámbrica establecida correctamente."
 }
 
-# Función para crear directorios si no existen
+# Función para verificar y crear directorios si no existen
 create_directories() {
     mkdir -p "$MACOS_SAVE_DIR" "$TEMP_DIR"
-    adb shell "mkdir -p $ANDROID_SAVE_DIR"
+    if ! adb shell "[ -d $ANDROID_SAVE_DIR ]"; then
+        log "El directorio de guardado en Android no existe. Creándolo..."
+        adb shell "mkdir -p $ANDROID_SAVE_DIR"
+    fi
 }
 
 # Función para obtener la fecha de modificación de un archivo
@@ -93,10 +99,10 @@ get_mod_time() {
     local file=$1
     if [[ $file == /* ]]; then
         # Archivo local
-        stat -f "%m" "$file"
+        stat -f "%m" "$file" 2>/dev/null || echo 0
     else
         # Archivo en Android
-        adb shell "stat -c %Y $file"
+        adb shell "stat -c %Y $file 2>/dev/null || echo 0"
     fi
 }
 
@@ -108,33 +114,58 @@ sync_farm() {
     local temp_android_path="$TEMP_DIR/android/$farm_name"
     local temp_macos_path="$TEMP_DIR/macos/$farm_name"
 
+    # Ignorar si es el archivo steam_autocloud.vdf
+    if [[ "$farm_name" == "$IGNORE_FILE" ]]; then
+        log "Ignorando archivo $IGNORE_FILE"
+        return
+    fi
+
     # Crear directorios temporales
     mkdir -p "$temp_android_path" "$temp_macos_path"
 
-    # Copiar archivos de Android a directorio temporal
-    adb pull "$android_farm_path" "$temp_android_path"
+    # Verificar si la granja existe en Android
+    if adb shell "[ -d $android_farm_path ]"; then
+        log "Copiando granja $farm_name desde Android..."
+        adb pull "$android_farm_path" "$temp_android_path"
+    else
+        log "La granja $farm_name no existe en Android."
+    fi
 
-    # Copiar archivos de macOS a directorio temporal
-    rsync -a "$macos_farm_path/" "$temp_macos_path/"
+    # Verificar si la granja existe en macOS
+    if [ -d "$macos_farm_path" ]; then
+        log "Copiando granja $farm_name desde macOS..."
+        rsync -a --exclude="$IGNORE_FILE" "$macos_farm_path/" "$temp_macos_path/"
+    else
+        log "La granja $farm_name no existe en macOS."
+    fi
 
     # Comparar fechas de modificación
-    local android_time=$(get_mod_time "$temp_android_path/$(ls -t "$temp_android_path" | head -1)")
-    local macos_time=$(get_mod_time "$temp_macos_path/$(ls -t "$temp_macos_path" | head -1)")
+    local android_time=$(get_mod_time "$temp_android_path/$(ls -t "$temp_android_path" 2>/dev/null | head -1)")
+    local macos_time=$(get_mod_time "$temp_macos_path/$(ls -t "$temp_macos_path" 2>/dev/null | head -1)")
 
     if [[ $android_time -gt $macos_time ]]; then
         log "La versión de Android es más reciente. Actualizando macOS..."
-        rsync -a --delete "$temp_android_path/" "$macos_farm_path/"
+        rsync -a --delete --exclude="$IGNORE_FILE" "$temp_android_path/" "$macos_farm_path/"
     elif [[ $macos_time -gt $android_time ]]; then
         log "La versión de macOS es más reciente. Actualizando Android..."
         adb push "$temp_macos_path" "$android_farm_path"
         # Asegurar permisos correctos en Android
         adb shell "chmod -R 755 $android_farm_path"
+    elif [[ $android_time -eq 0 && $macos_time -eq 0 ]]; then
+        log "La granja $farm_name no existe en ninguna plataforma. Saltando..."
     else
         log "Ambas versiones están sincronizadas para la granja $farm_name."
     fi
 
     # Limpiar directorios temporales
     rm -rf "$temp_android_path" "$temp_macos_path"
+}
+
+# Función para obtener la lista de granjas
+get_farms_list() {
+    local android_farms=$(adb shell "ls $ANDROID_SAVE_DIR 2>/dev/null" | tr -d '\r')
+    local macos_farms=$(ls "$MACOS_SAVE_DIR" 2>/dev/null)
+    echo "$android_farms $macos_farms" | tr ' ' '\n' | sort | uniq | grep -v "$IGNORE_FILE"
 }
 
 # Función principal
@@ -145,14 +176,13 @@ main() {
     choose_connection_method
     create_directories
 
-    # Obtener lista de granjas en Android
-    android_farms=$(adb shell "ls $ANDROID_SAVE_DIR")
-    
-    # Obtener lista de granjas en macOS
-    macos_farms=$(ls "$MACOS_SAVE_DIR")
+    # Obtener lista de todas las granjas
+    all_farms=$(get_farms_list)
 
-    # Combinar y eliminar duplicados
-    all_farms=$(echo "$android_farms $macos_farms" | tr ' ' '\n' | sort | uniq)
+    if [ -z "$all_farms" ]; then
+        log "No se encontraron granjas para sincronizar."
+        exit 0
+    fi
 
     # Sincronizar cada granja
     for farm in $all_farms; do
