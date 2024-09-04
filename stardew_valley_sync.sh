@@ -126,12 +126,7 @@ sync_farm() {
     # Verificar si la granja existe en Android
     if adb shell "[ -d $android_farm_path ]"; then
         log "Copiando granja $farm_name desde Android..."
-        adb pull "$android_farm_path" "$temp_android_path"
-        # Mover los archivos un nivel arriba si se creó un subdirectorio
-        if [ -d "$temp_android_path/$farm_name" ]; then
-            mv "$temp_android_path/$farm_name"/* "$temp_android_path/"
-            rmdir "$temp_android_path/$farm_name"
-        fi
+        adb pull "$android_farm_path/." "$temp_android_path"
     else
         log "La granja $farm_name no existe en Android."
     fi
@@ -153,7 +148,7 @@ sync_farm() {
         rsync -a --delete --exclude="$IGNORE_FILE" "$temp_android_path/" "$macos_farm_path/"
     elif [[ $macos_time -gt $android_time ]]; then
         log "La versión de macOS es más reciente. Actualizando Android..."
-        adb push "$temp_macos_path" "$android_farm_path"
+        adb push "$temp_macos_path/." "$android_farm_path"
         # Asegurar permisos correctos en Android
         adb shell "chmod -R 755 $android_farm_path"
     elif [[ $android_time -eq 0 && $macos_time -eq 0 ]]; then
