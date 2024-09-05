@@ -123,10 +123,14 @@ sync_farm() {
     # Crear directorios temporales
     mkdir -p "$temp_android_path" "$temp_macos_path"
 
+    local android_exists=false
+    local macos_exists=false
+
     # Verificar si la granja existe en Android
     if adb shell "[ -d $android_farm_path ]"; then
         log "Copiando granja $farm_name desde Android..."
         adb pull "$android_farm_path/." "$temp_android_path"
+        android_exists=true
     else
         log "La granja $farm_name no existe en Android."
     fi
@@ -135,26 +139,40 @@ sync_farm() {
     if [ -d "$macos_farm_path" ]; then
         log "Copiando granja $farm_name desde macOS..."
         rsync -a --exclude="$IGNORE_FILE" "$macos_farm_path/" "$temp_macos_path/"
+        macos_exists=true
     else
         log "La granja $farm_name no existe en macOS."
     fi
 
-    # Comparar fechas de modificación
-    local android_time=$(get_mod_time "$temp_android_path/$(ls -t "$temp_android_path" 2>/dev/null | head -1)")
-    local macos_time=$(get_mod_time "$temp_macos_path/$(ls -t "$temp_macos_path" 2>/dev/null | head -1)")
+    # Comparar y sincronizar
+    if $android_exists && $macos_exists; then
+        # La granja existe en ambas plataformas, comparar fechas
+        local android_time=$(get_mod_time "$temp_android_path/$(ls -t "$temp_android_path" 2>/dev/null | head -1)")
+        local macos_time=$(get_mod_time "$temp_macos_path/$(ls -t "$temp_macos_path" 2>/dev/null | head -1)")
 
-    if [[ $android_time -gt $macos_time ]]; then
-        log "La versión de Android es más reciente. Actualizando macOS..."
+        if [[ $android_time -gt $macos_time ]]; then
+            log "La versión de Android es más reciente. Actualizando macOS..."
+            rsync -a --delete --exclude="$IGNORE_FILE" "$temp_android_path/" "$macos_farm_path/"
+        elif [[ $macos_time -gt $android_time ]]; then
+            log "La versión de macOS es más reciente. Actualizando Android..."
+            adb push "$temp_macos_path/." "$android_farm_path"
+            # Asegurar permisos correctos en Android
+            adb shell "chmod -R 755 $android_farm_path"
+        else
+            log "Ambas versiones están sincronizadas para la granja $farm_name."
+        fi
+    elif $android_exists; then
+        # La granja solo existe en Android, copiarla a macOS
+        log "La granja $farm_name solo existe en Android. Copiando a macOS..."
         rsync -a --delete --exclude="$IGNORE_FILE" "$temp_android_path/" "$macos_farm_path/"
-    elif [[ $macos_time -gt $android_time ]]; then
-        log "La versión de macOS es más reciente. Actualizando Android..."
+    elif $macos_exists; then
+        # La granja solo existe en macOS, copiarla a Android
+        log "La granja $farm_name solo existe en macOS. Copiando a Android..."
         adb push "$temp_macos_path/." "$android_farm_path"
         # Asegurar permisos correctos en Android
         adb shell "chmod -R 755 $android_farm_path"
-    elif [[ $android_time -eq 0 && $macos_time -eq 0 ]]; then
-        log "La granja $farm_name no existe en ninguna plataforma. Saltando..."
     else
-        log "Ambas versiones están sincronizadas para la granja $farm_name."
+        log "La granja $farm_name no existe en ninguna plataforma. Saltando..."
     fi
 
     # Limpiar directorios temporales
