@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Configuración de directorios
-MACOS_SAVE_DIR="${HOME}/.config/StardewValley/Saves"
+GAME_SAVE_DIR="${HOME}/.config/StardewValley/Saves"
 ANDROID_SAVE_DIR="/storage/emulated/0/Android/data/com.chucklefish.stardewvalley/files/Saves"
 TEMP_DIR="/tmp/stardew_valley_sync"
 
@@ -87,7 +87,7 @@ connect_wireless() {
 
 # Función para verificar y crear directorios si no existen
 create_directories() {
-    mkdir -p "$MACOS_SAVE_DIR" "$TEMP_DIR"
+    mkdir -p "$GAME_SAVE_DIR" "$TEMP_DIR"
     if ! adb shell "[ -d $ANDROID_SAVE_DIR ]"; then
         log "El directorio de guardado en Android no existe. Creándolo..."
         adb shell "mkdir -p $ANDROID_SAVE_DIR"
@@ -110,7 +110,7 @@ get_mod_time() {
 sync_farm() {
     local farm_name=$1
     local android_farm_path="$ANDROID_SAVE_DIR/$farm_name"
-    local macos_farm_path="$MACOS_SAVE_DIR/$farm_name"
+    local macos_farm_path="$GAME_SAVE_DIR/$farm_name"
     local temp_android_path="$TEMP_DIR/android/$farm_name"
     local temp_macos_path="$TEMP_DIR/macos/$farm_name"
 
@@ -182,7 +182,7 @@ sync_farm() {
 # Función para obtener la lista de granjas
 get_farms_list() {
     local android_farms=$(adb shell "ls $ANDROID_SAVE_DIR 2>/dev/null" | tr -d '\r')
-    local macos_farms=$(ls "$MACOS_SAVE_DIR" 2>/dev/null)
+    local macos_farms=$(ls "$GAME_SAVE_DIR" 2>/dev/null)
     echo "$android_farms $macos_farms" | tr ' ' '\n' | sort | uniq | grep -v "$IGNORE_FILE"
 }
 
